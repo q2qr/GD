@@ -274,6 +274,7 @@ xcopy /Y /Q "$(ProjectDir)..\cocos2d-x\external\libwebsockets\win32\lib\*.*" "$(
     <ClInclude Include="..\Classes\SongsLayer.h" />
     <ClInclude Include="..\Classes\TextArea.h" />
     <ClInclude Include="..\Classes\TutorialLayer.h" />
+    <ClInclude Include="..\Classes\TutorialPopup.h" />
     <ClInclude Include="..\Classes\UILayer.h" />
     <ClInclude Include="main.h" />
   </ItemGroup>

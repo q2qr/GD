@@ -15,6 +15,8 @@ public:
 	void createBackground();
 	void removeBackground();
 
+	void createObject(char const*, cocos2d::CCPoint pos);
+
 	cocos2d::CCSprite* m_bgSprite; // 0x110
 
 	CC_SYNTHESIZE(int, m_objectCount, ObjectCount); // 0x124
