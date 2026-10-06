@@ -130,7 +130,7 @@ void BoomScrollLayer::updatePages()
 		CCNode* page = (CCNode*)m_actualPages->objectAtIndex(i);
 		page->setAnchorPoint(ccp(0,0));
 		page->setContentSize(WIN_SIZE);
-		page->setPosition(ccp(getContentSize().width - getPagesWidthOffset(), 0));
+		page->setPosition(getRelativePosForPage(i));
 		
 		if (!page->getParent())
 			m_internalLayer->addChild(page);
@@ -204,6 +204,8 @@ void BoomScrollLayer::instantMoveToPage(int page)
 
 void BoomScrollLayer::moveToPageEnded()
 {
+	m_movingToPage = false;
+
 	if (m_animatingToPage != m_currentScreen && m_delegate)
 		m_delegate->scrollLayerScrollingStarted(this);
 
@@ -217,7 +219,7 @@ void BoomScrollLayer::moveToPageEnded()
 // https://github.com/geode-sdk/bindings/blob/main/bindings/2.208/inline/BoomScrollLayer.cpp#L21
 CCPoint BoomScrollLayer::positionForPageWithNumber(int page)
 {
-	return ccp((getContentSize().width + m_pagesWidthOffset) * -page, 0.f);
+	return ccp((getContentSize().width - m_pagesWidthOffset) * -page, 0.f);
 }
 
 CCPoint BoomScrollLayer::getRelativePosForPage(int page)
@@ -227,36 +229,14 @@ CCPoint BoomScrollLayer::getRelativePosForPage(int page)
 
 void BoomScrollLayer::repositionPagesLooped()
 {
-	int page1 = getRelativePageForNum(m_currentScreen);
-	int page2 = getRelativePageForNum(m_currentScreen - 1);
-	int page3 = getRelativePageForNum(m_currentScreen + 1);
-
-	int actualPage3 = page3;
-	int actualPage2 = page2;
-
-	if (unk_0x124) {
-		getPage(m_currentScreen)->setPosition(getRelativePosForPage(m_currentScreen));
-		actualPage2 = m_currentScreen - 1;
-		actualPage3 = m_currentScreen + 1;
-	}
-
-	getPage(actualPage2)->setPosition(getRelativePosForPage(actualPage2));
-	getPage(actualPage3)->setPosition(getRelativePosForPage(actualPage3));
-	
-	for (int i = 0; i < (int)m_actualPages->count(); ++i)
-		((CCLayer*)m_actualPages->objectAtIndex(i))->setVisible(false);	
-
-	getPage(page1)->setVisible(true);
-	getPage(actualPage2)->setVisible(true);
-	getPage(actualPage3)->setVisible(true);
-	if (unk_0x124) {
-		/*getPage(m_currentScreen);
-		unk_0x120->objectAtIndex(page1);
-		getPage(m_currentScreen + -1);
-		unk_0x120->objectAtIndex(page2);
-		getPage(m_currentScreen + 1);
-		unk_0x120->objectAtIndex(page3);*/
-	}
+    // Wrapped page indices identify nodes; unwrapped indices determine their positions.
+    for (int i = 0; i < (int)m_actualPages->count(); ++i)
+        ((CCNode*)m_actualPages->objectAtIndex(i))->setVisible(false);
+    for (int raw = m_currentScreen - 1; raw <= m_currentScreen + 1; ++raw) {
+        CCNode* page = getPage(getRelativePageForNum(raw));
+        page->setPosition(getRelativePosForPage(raw));
+        page->setVisible(true);
+    }
 }
 
 void BoomScrollLayer::setPagesIndicatorPosition(CCPoint position)
@@ -273,7 +253,11 @@ unsigned int BoomScrollLayer::getTotalPages()
 
 int BoomScrollLayer::pageNumberForPosition(CCPoint pos)
 {
-	float pageFloat = pos.x / (getContentSize().width - m_pagesWidthOffset);
+	float pageWidth = getContentSize().width - m_pagesWidthOffset;
+	if (pageWidth <= 0.0f)
+		return m_currentScreen;
+
+	float pageFloat = -pos.x / pageWidth;
 	int pageNumber = (int)ceilf(pageFloat);
 	if (pageNumber - pageFloat >= 0.5f)
 		pageNumber--;
@@ -283,7 +267,7 @@ int BoomScrollLayer::pageNumberForPosition(CCPoint pos)
 		pageNumber = MIN(getTotalPages() - 1, pageNumber);
 	}
 
-	return (unsigned int)pageNumber;
+	return pageNumber;
 }
 
 // https://github.com/geode-sdk/bindings/blob/main/bindings/2.208/inline/BoomScrollLayer.cpp#L111

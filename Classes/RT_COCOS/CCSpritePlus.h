@@ -8,6 +8,8 @@
 class CCSpritePlus : public cocos2d::CCSprite {
 
 public:
+	CCSpritePlus() : m_followers(NULL), m_followingSprite(NULL), m_hasFollower(false) {}
+	virtual ~CCSpritePlus() { CC_SAFE_RELEASE(m_followers); }
 	cocos2d::CCArray* m_followers; // 0x1b8
 	CCSpritePlus* m_followingSprite; // 0x1bc
 	bool m_hasFollower; // 0x1c0

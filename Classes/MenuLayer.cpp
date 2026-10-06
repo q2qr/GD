@@ -17,7 +17,79 @@
 #include "OptionsLayer.h"
 #include "GJMoreGamesLayer.h"
 #include "MoreGamesManager.h"
+#include "GJDropDownLayer.h"
+#include "GameStatsManager.h"
+#include "AchievementManager.h"
+#include <algorithm>
+#include <vector>
 USING_NS_CC;
+
+// Offline panels use the original achievement descriptions. Server features remain separate.
+class LocalProgressPanel : public GJDropDownLayer {
+public:
+    bool achievements;
+    int page;
+    CCLayer* body;
+    std::vector<std::pair<int, std::string> > entries;
+    static LocalProgressPanel* createPanel(bool achievementList) {
+        LocalProgressPanel* result = new LocalProgressPanel();
+        result->achievements = achievementList; result->page = 0;
+        if (!result->init(achievementList ? "Achievements" : "Stats", 220.0f)) { delete result; return NULL; }
+        result->autorelease(); return result;
+    }
+    virtual void customSetup() {
+        body = CCLayer::create(); m_internalLayer->addChild(body, 2);
+        if (achievements) {
+            CCDictionary* dict = AchievementManager::sharedState()->m_allAchievements;
+            CCDictElement* element = NULL;
+            CCDICT_FOREACH(dict, element) {
+                CCDictionary* item = (CCDictionary*)element->getObject();
+                entries.push_back(std::make_pair(item->valueForKey("order")->intValue(), std::string(element->getStrKey())));
+            }
+            std::sort(entries.begin(), entries.end());
+            for (int direction = -1; direction <= 1; direction += 2) {
+                CCLabelBMFont* label = CCLabelBMFont::create(direction < 0 ? "<" : ">", "bigFont.fnt"); label->setScale(0.5f);
+                CCMenuItemSpriteExtra* arrow = CCMenuItemSpriteExtra::create(label, NULL, this, menu_selector(LocalProgressPanel::onPage));
+                arrow->setTag(direction);
+                arrow->setPosition(m_uiMenu->convertToNodeSpace(ccp(240 + direction * 130, 52)));
+                m_uiMenu->addChild(arrow);
+            }
+        }
+        refresh();
+    }
+    void onPage(CCObject* sender) {
+        int count = ((int)entries.size() + 3) / 4;
+        if (count) page = (page + ((CCNode*)sender)->getTag() + count) % count;
+        refresh();
+    }
+    void text(const char* value, float y, float scale, ccColor3B color = ccWHITE) {
+        CCLabelBMFont* label = CCLabelBMFont::create(value, "bigFont.fnt");
+        label->setScale(MIN(scale, 325.0f / MAX(1.0f, label->getContentSize().width)));
+        label->setPosition(ccp(240, y)); label->setColor(color); body->addChild(label);
+    }
+    void refresh() {
+        body->removeAllChildrenWithCleanup(true);
+        if (!achievements) {
+            text(CCString::createWithFormat("Total jumps: %i", GameStatsManager::sharedState()->getStat("1"))->getCString(), 238, 0.5f);
+            text(CCString::createWithFormat("Total attempts: %i", GM->getTotalAttempts())->getCString(), 201, 0.5f);
+            text(CCString::createWithFormat("Stars: %i", GameStatsManager::sharedState()->getStat("6"))->getCString(), 164, 0.5f);
+            text(CCString::createWithFormat("Coins: %i", GameStatsManager::sharedState()->getStat("8"))->getCString(), 127, 0.5f);
+            text("Local progress", 88, 0.35f);
+            return;
+        }
+        AchievementManager* manager = AchievementManager::sharedState();
+        for (int i = page * 4; i < (int)entries.size() && i < page * 4 + 4; ++i) {
+            const char* key = entries[i].second.c_str();
+            CCDictionary* item = (CCDictionary*)manager->m_allAchievements->objectForKey(key);
+            bool earned = manager->isAchievementEarned(key);
+            float y = 242 - (i % 4) * 45;
+            text(item->valueForKey("title")->getCString(), y, 0.42f, earned ? ccc3(125, 255, 0) : ccWHITE);
+            text(item->valueForKey(earned ? "achievedDescription" : "unachievedDescription")->getCString(), y - 18, 0.27f);
+        }
+        text(CCString::createWithFormat("%i / %i", page + 1, ((int)entries.size() + 3) / 4)->getCString(), 52, 0.35f);
+    }
+};
+
 
 CCScene* MenuLayer::scene(){
     // 'scene' is an autorelease object
@@ -79,7 +151,8 @@ void MenuLayer::onCreator(CCObject* sender)
 
 void MenuLayer::onAchievements(CCObject* sender)
 {
-    
+    LocalProgressPanel* panel = LocalProgressPanel::createPanel(true);
+    if (panel) { addChild(panel, 100); panel->showLayer(false); }
 }
 
 void MenuLayer::onOptions(CCObject* sender)
@@ -91,7 +164,8 @@ void MenuLayer::onOptions(CCObject* sender)
 
 void MenuLayer::onStats(CCObject* sender)
 {
-    
+    LocalProgressPanel* panel = LocalProgressPanel::createPanel(false);
+    if (panel) { addChild(panel, 100); panel->showLayer(false); }
 }
 
 void MenuLayer::onRobTop(CCObject* sender)

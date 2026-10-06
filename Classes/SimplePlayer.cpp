@@ -58,7 +58,16 @@ bool SimplePlayer::init(int iconID)
 
 void SimplePlayer::updatePlayerFrame(int iconID, IconType type)
 {
-
+    const char* prefix = type == IconType::Ship ? "ship" : type == IconType::Ball ? "player_ball" : type == IconType::UFO ? "bird" : "player";
+    CCSpriteFrameCache* cache = CCSpriteFrameCache::sharedSpriteFrameCache();
+    CCSpriteFrame* first = cache->spriteFrameByName(CCString::createWithFormat("%s_%02d_001.png", prefix, iconID)->getCString());
+    if (!first) return;
+    m_firstLayer->setDisplayFrame(first);
+    CCSpriteFrame* second = cache->spriteFrameByName(CCString::createWithFormat("%s_%02d_2_001.png", prefix, iconID)->getCString());
+    m_secondLayer->setVisible(second != NULL);
+    if (second) m_secondLayer->setDisplayFrame(second);
+    m_secondLayer->setPosition(m_firstLayer->getContentSize() / 2);
+    m_outlineLayer->setVisible(false);
 }
 
 void SimplePlayer::updateColors()

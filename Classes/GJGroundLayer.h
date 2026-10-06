@@ -16,6 +16,7 @@ public:
     virtual void fadeOutGround(float duration);
 
 	void deactivateGround();
+	void updateScroll(float cameraX);
 
     // variables
 	CC_SYNTHESIZE_READONLY(cocos2d::CCSprite*, m_groundSprite, GroundSprite); // 0x10c

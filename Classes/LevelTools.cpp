@@ -30,7 +30,7 @@ const char* LevelTools::getAudioFileName(int audio)
     switch (audio) {
         case 0: return "StereoMadness.mp3";
         default: return "BackOnTrack.mp3";
-        case 2: return "Polargeist";
+        case 2: return "Polargeist.mp3";
         case 3: return "DryOut.mp3";
         case 4: return "BaseAfterBase.mp3";
         case 5: return "CantLetGo.mp3";
@@ -132,7 +132,9 @@ GJGameLevel* LevelTools::getLevel(int level)
         case 12:
             m_level->setLevelName(getAudioTitle(11));
             m_level->setAudioTrack(11);
-            // uhhh what???: goto LAB_001971ce;
+            m_level->setDifficulty(5);
+            m_level->setStars(12);
+            break;
         // Electroman Adventures
         case 13:
             m_level->setLevelName(getAudioTitle(12));

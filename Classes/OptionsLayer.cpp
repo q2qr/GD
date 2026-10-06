@@ -38,7 +38,7 @@ void OptionsLayer::createToggleButton(std::string text, SEL_MenuHandler callback
 	toggler->setSizeMult(1.5f);
 
 	CCLabelBMFont* label = CCLabelBMFont::create(text.c_str(), "bigFont.fnt");
-	this->addChild(label);
+	m_internalLayer->addChild(label);
 
 	label->setAnchorPoint(ccp(0.0f, 0.5f));
 
@@ -149,14 +149,14 @@ void OptionsLayer::onSupport(CCObject* sender)
 {
 	unk_0x1bc = true;
 	unk_0x1bd = false;
-	// this->exitLayer();
+	CCApplication::sharedApplication()->openURL(unk_0x1bc ? "https://www.robtopgames.com" : "https://www.robtopgames.com/blog/geometry-dash-soundtracks/");
 }
 
 void OptionsLayer::onSoundtracks(CCObject* sender)
 {
 	unk_0x1bd = true;
 	unk_0x1bc = false;
-	// this->exitLayer();
+	CCApplication::sharedApplication()->openURL(unk_0x1bc ? "https://www.robtopgames.com" : "https://www.robtopgames.com/blog/geometry-dash-soundtracks/");
 }
 
 void OptionsLayer::onHelp(CCObject* sender)

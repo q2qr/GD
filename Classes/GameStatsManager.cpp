@@ -16,6 +16,7 @@ GameStatsManager* GameStatsManager::sharedState()
 
 bool GameStatsManager::init()
 {
+	firstSetup();
 	m_liteAchievementsDict = CCDictionary::create();
 	m_liteAchievementsDict->retain();
     return true;
@@ -32,8 +33,7 @@ void GameStatsManager::firstSetup()
 
 int GameStatsManager::getStat(const char *stat)
 {
-    // this is just a temporary value while i actually decompile this class
-    return 21739;
+    return m_valueDict->valueForKey(stat)->intValue();
 }
 
 void GameStatsManager::incrementStat(char const* stat)
@@ -43,7 +43,7 @@ void GameStatsManager::incrementStat(char const* stat)
 
 void GameStatsManager::incrementStat(char const* stat, int unk1)
 {
-	// todo
+	m_valueDict->setObject(CCString::createWithFormat("%i", getStat(stat) + unk1), stat);
 }
 
 void GameStatsManager::dataLoaded(DS_Dictionary* dict)
@@ -64,7 +64,7 @@ void GameStatsManager::encodeDataTo(DS_Dictionary* dict)
 
 std::string GameStatsManager::getUniqueItemKey(char const* itemKey)
 {
-	return CCString::createWithFormat("unique_%s")->getCString();
+	return CCString::createWithFormat("unique_%s", itemKey)->getCString();
 }
 
 bool GameStatsManager::hasUniqueItem(char const* itemKey)

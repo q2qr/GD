@@ -4,14 +4,15 @@ USING_NS_CC;
 
 GJGameLevel* GJGameLevel::create()
 {
-    static GJGameLevel* gGJGameLevel = NULL;
-    if (!gGJGameLevel)
-    {
-        gGJGameLevel = new GJGameLevel();
-        gGJGameLevel->init();
+    // Each selection page owns a different level. Sharing one instance makes
+    // the final page overwrite the data used by every earlier play button.
+    GJGameLevel* level = new GJGameLevel();
+    if (level && level->init()) {
+        level->autorelease();
+        return level;
     }
-    
-    return gGJGameLevel;
+    CC_SAFE_DELETE(level);
+    return NULL;
 }
 
 GJGameLevel::GJGameLevel()

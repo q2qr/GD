@@ -48,22 +48,30 @@ LevelSettingsObject* LevelSettingsObject::objectFromString(std::string str) {
 			dict->valueForKey("kS7")->intValue(),
 			dict->valueForKey("kS8")->intValue(), 
 			dict->valueForKey("kS9")->intValue())); // line color
-        // this might be setStartObjColor: obj->setColor4(color("kS10", "kS11", "kS12")); // object color
-        // same for this but tint: obj->setColor5(color("kS13", "kS14", "kS15")); // obj-2 color
+        if (dict->objectForKey("kS10")) obj->setStartObjColor(ccc3(
+            dict->valueForKey("kS10")->intValue(), dict->valueForKey("kS11")->intValue(), dict->valueForKey("kS12")->intValue()));
+        if (dict->objectForKey("kS13")) obj->setStartTintObjColor(ccc3(
+            dict->valueForKey("kS13")->intValue(), dict->valueForKey("kS14")->intValue(), dict->valueForKey("kS15")->intValue()));
     }
     obj->setStartMode(dict->valueForKey("kA2")->intValue()); // gamemode
     obj->setStartMiniMode(dict->valueForKey("kA3")->boolValue()); // mini mode
     obj->setStartSpeed(dict->valueForKey("kA4")->intValue()); // speed
     
-    /*obj->setS16(dict->valueForKey("kS16")->intValue());
-     obj->setS17(dict->valueForKey("kS17")->intValue());
-     obj->setS18(dict->valueForKey("kS18")->intValue());
-     obj->setS19(dict->valueForKey("kS19")->intValue());
-     obj->setS20(dict->valueForKey("kS20")->intValue());*/
+    for (int i = 0; i < 5; ++i)
+        obj->m_startCustom[i] = dict->valueForKey(CCString::createWithFormat("kS%d", 16 + i)->getCString())->intValue();
     
-    //obj->setA5(dict->valueForKey("kA5")->boolValue());
+    if (dict->objectForKey("kA5")) obj->setTintObjectsUseBlend(dict->valueForKey("kA5")->boolValue());
     obj->setBGIdx(dict->valueForKey("kA6")->intValue()); // bg texture
     obj->setGIdx(dict->valueForKey("kA7")->intValue()); // ground texture
     
     return obj;
+}
+
+void LevelSettingsObject::updateColors(ccColor3B p1, ccColor3B p2)
+{
+    ccColor3B* colors[] = { &m_startBGColor, &m_startGColor, &m_startLineColor, &m_startObjColor, &m_startTintObjColor };
+    for (int i = 0; i < 5; ++i) {
+        if (m_startCustom[i] == 1) *colors[i] = p1;
+        else if (m_startCustom[i] == 2) *colors[i] = p2;
+    }
 }

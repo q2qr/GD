@@ -11,6 +11,8 @@ public:
 	CREATE_FUNC(LevelSettingsObject);
     static LevelSettingsObject* objectFromString(std::string str);
     virtual bool init();
+	void updateColors(cocos2d::ccColor3B p1, cocos2d::ccColor3B p2);
+	int m_startCustom[5] = {};
     
 	// colors
 	CC_SYNTHESIZE(cocos2d::ccColor3B, m_startBGColor, StartBGColor); // 0xe8

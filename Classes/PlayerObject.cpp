@@ -3,13 +3,43 @@
 #include "PlayLayer.h"
 USING_NS_CC;
 
+namespace {
+// The original CCCircleWave is not reconstructed yet. Model its death wave
+// (10 -> 90 units over 0.5s) with the engine's existing draw node.
+class DeathWave : public CCDrawNode {
+public:
+	float elapsed = 0.0f;
+	float playerScale = 1.0f;
+	ccColor3B color;
+	virtual void update(float dt) {
+		elapsed += dt;
+		if (elapsed >= 0.5f) {
+			removeFromParentAndCleanup(true);
+			return;
+		}
+		float progress = elapsed / 0.5f;
+		float radius = (10.0f + 80.0f * progress) * playerScale;
+		CCPoint points[64];
+		for (int i = 0; i < 64; ++i) {
+			float angle = i * 6.2831853f / 64;
+			points[i] = ccp(cosf(angle) * radius, sinf(angle) * radius);
+		}
+		clear();
+		drawPolygon(points, 64, ccc4f(0, 0, 0, 0), playerScale,
+			ccc4f(color.r / 255.0f, color.g / 255.0f, color.b / 255.0f, 1.0f - progress));
+	}
+};
+}
+
 // hi there, 
 // this and PlayLayer are halfway there, with just hitboxes and other gamemodes being the main issues.
 // hopefully they'll be done next month
 
 PlayerObject::PlayerObject()
 {
-	m_vehicleSprite = nullptr;
+	m_touchedRing = nullptr;
+    m_portalObject = nullptr;
+    m_vehicleSprite = nullptr;
 	m_vehicleSpriteSecondary = nullptr;
 	m_vehicleSpriteThird = nullptr;
 	unk_0x2e4 = nullptr;
@@ -23,11 +53,15 @@ PlayerObject::PlayerObject()
 
 	m_canJump = false;
 	unk_0x30e = false;
+	unk_0x312 = false;
 
 	unk_0x324 = 0.0f;
 	unk_0x350 = 0.0f;
 	m_hasJumped = false;
 	m_hasRingJumped = false;
+    m_dragParticle = nullptr; m_birdDragParticle = nullptr; m_shipDragParticle = nullptr;
+    m_dragParticle2 = nullptr; m_burstParticle = nullptr;
+    unk_0x368 = false; unk_0x348 = 0;
 }
 
 PlayerObject* PlayerObject::create(int player, int ship, CCLayer* layer)
@@ -73,8 +107,8 @@ bool PlayerObject::init(int player, int ship, CCLayer* layer) {
 	m_iconSprite = CCSprite::createWithSpriteFrameName(frameFile.c_str());
 	this->addChild(m_iconSprite, 1);
 	m_iconSpriteSecondary = CCSprite::createWithSpriteFrameName(frameFile2.c_str());
-	this->addChild(m_iconSpriteSecondary, -1);
-	m_iconSpriteSecondary->setPosition(this->convertToNodeSpace(CCPointZero));
+	m_iconSprite->addChild(m_iconSpriteSecondary, -1);
+	m_iconSpriteSecondary->setPosition(m_iconSprite->getContentSize() / 2);
 #pragma endregion
 
 	std::string sFrameFile = CCString::createWithFormat("ship_%02d_001.png", shipIdx)->getCString();
@@ -131,7 +165,7 @@ bool PlayerObject::init(int player, int ship, CCLayer* layer) {
 
 	m_dragParticle2->setPosVar(ccp(0.0f, 2.0f));
 	m_dragParticle2->setSpeed(m_dragParticle2->getSpeed() * 2);
-	m_dragParticle->setSpeedVar(m_dragParticle2->getSpeedVar() * 2);
+	m_dragParticle2->setSpeedVar(m_dragParticle2->getSpeedVar() * 2);
 	m_dragParticle2->setAngleVar(m_dragParticle2->getAngleVar() * 2);
 	m_dragParticle2->setStartSize(m_dragParticle2->getStartSize() * 1.5f);
 	m_dragParticle2->setStartSizeVar(m_dragParticle2->getStartSizeVar() * 1.5f);
@@ -252,15 +286,10 @@ void PlayerObject::update(float dt)
 			else
 				m_shipDragParticle->resumeSystem();
 		}
-		else if (!m_onGround || levelFlipping() || !m_isLocked) {
+		else if (!m_onGround || levelFlipping()) {
 			this->touchedObject(nullptr);
-			if (m_pGroundActive && this->getActionByTag(2) == 0) {
-				CCDelayTime* delay = CCDelayTime::create(0.6f);
-				CCCallFunc* uVar4 = CCCallFunc::create(this, callfunc_selector(PlayerObject::deactivateParticle));
-				CCSequence* pCVar5 = CCSequence::create(delay, uVar4, nullptr);
-				pCVar5->setTag(2);
-				this->runAction(pCVar5);
-			}
+			this->stopActionByTag(2);
+			this->deactivateParticle();
 		}
 		else {
 			if (!m_pGroundActive)
@@ -312,6 +341,7 @@ void PlayerObject::resetObject()
 	unk_0x310 = false;
 	setPosition(PLAY_LAYER->getStartPos());
 	m_yVelocity = 0;
+    m_touchedRing = nullptr;
 	flipGravity(false, false);
 	toggleFlyMode(false);
 	toggleRollMode(false);
@@ -320,7 +350,9 @@ void PlayerObject::resetObject()
 	stopRotation();
 	setRotation(0);
 	m_isDead = false;
+	unk_0x312 = false;
 	stopActionByTag(3);
+	setVisible(true);
 	setOpacity(255);
 	toggleGhostEffect(GhostType::Disabled);
 	updateTimeMod(0.9f);
@@ -373,7 +405,7 @@ void PlayerObject::resetPlayerIcon()
 
 void PlayerObject::pushButton(PlayerButton button)
 {
-	if ((!m_isLocked) && (button == PlayerButton::Jump)) {
+	if ((!m_isLocked) && !m_isDead && !unk_0x30e && (button == PlayerButton::Jump)) {
 		if (m_isPlayLayer) {
 			PLAY_LAYER->recordAction(true);
 		}
@@ -407,6 +439,9 @@ void PlayerObject::pushButton(PlayerButton button)
 
 void PlayerObject::playerDestroyed()
 {
+	if (m_isDead)
+		return;
+
 	if (unk_0x318 != 0.0f) {
 		// PLAY_LAYER->removeLastCheckpoint();
 		unk_0x318 = 0.0f;
@@ -420,8 +455,43 @@ void PlayerObject::playerDestroyed()
 	m_birdDragParticle->stopSystem();
 	m_dragParticle2->stopSystem();
 	m_shipDragParticle->stopSystem();
+	m_burstParticle->stopSystem();
+	m_landParticle->stopSystem();
+	m_landParticle2->stopSystem();
+	deactivateStreak();
 
 	toggleGhostEffect(GhostType::Disabled);
+
+	// Android 1.71 fades the icon and emits a separate, player-colored burst.
+	// Keep effects in the world layer so hiding the player cannot hide them.
+	stopActionByTag(3);
+	CCSequence* fade = CCSequence::create(CCFadeTo::create(0.05f, 0), CCHide::create(), nullptr);
+	fade->setTag(3);
+	runAction(fade);
+	CCPoint effectPosition = m_gameLayer->convertToNodeSpace(getParent()->convertToWorldSpace(getPosition()));
+	CCParticleSystemQuad* explosion = CCParticleSystemQuad::create("explodeEffect.plist");
+	if (explosion) {
+		explosion->setPositionType(kCCPositionTypeGrouped);
+		m_gameLayer->addChild(explosion, 3);
+		explosion->setAutoRemoveOnFinish(true);
+		explosion->setPosition(effectPosition);
+		explosion->setStartColor(ccc4f(m_glowColor1.r / 255.0f,
+			m_glowColor1.g / 255.0f, m_glowColor1.b / 255.0f, 1.0f));
+		explosion->setScale(m_playerScale);
+		explosion->resetSystem();
+	}
+	DeathWave* wave = new DeathWave();
+	if (wave->init()) {
+		wave->autorelease();
+		wave->color = m_glowColor1;
+		wave->playerScale = m_playerScale;
+		wave->setPosition(effectPosition);
+		m_gameLayer->addChild(wave);
+		wave->update(0.0f);
+		wave->scheduleUpdate();
+	}
+	else
+		delete wave;
 }
 
 void PlayerObject::playBurstEffect()
@@ -458,12 +528,14 @@ void PlayerObject::setColor(const ccColor3B& color)
 	CCSprite::setColor(color);
 	m_iconSprite->setColor(color);
 	m_vehicleSprite->setColor(color);
+	updateGlowColor();
 }
 
 void PlayerObject::setSecondColor(const ccColor3B& color)
 {
 	m_iconSpriteSecondary->setColor(color);
 	m_vehicleSpriteSecondary->setColor(color);
+	updateGlowColor();
 }
 
 void PlayerObject::setVisible(bool visible)
@@ -514,18 +586,24 @@ void PlayerObject::setOpacity(GLubyte opacity)
 }
 
 void PlayerObject::setPosition(CCPoint const &position) {
-	GameObject::setPosition(position);
-	unk_0x2e4->setPosition(position);
+    GameObject::setPosition(position);
+    if (unk_0x2e4) unk_0x2e4->setPosition(position);
+    m_startPos = position;
 
-	// what the :sob: am i doing bro this isnt even right
-	m_startPos = position;
-
-	// this is WRONG like very very WRONG
-	m_birdDragParticle->setPosition(position);
-	m_dragParticle2->setPosition(position);
-	m_burstParticle->setPosition(position);
-	m_dragParticle->setPosition(position);
-	m_shipDragParticle->setPosition(position);
+    // Emit at the contact edge/exhaust instead of the centre of the cube.
+    // Convert between parents so menu and camera-controlled gameplay agree.
+    CCPoint foot = position + ccp(-12.0f * m_playerScale, -12.0f * flipMod() * m_playerScale);
+    CCPoint exhaust = position + ccp(-15.0f * m_playerScale, -5.0f * flipMod() * m_playerScale);
+    CCNode* parent = getParent();
+    CCParticleSystemQuad* particles[] = {m_dragParticle, m_birdDragParticle, m_shipDragParticle, m_dragParticle2, m_burstParticle};
+    for (int i = 0; i < 5; ++i) {
+        CCParticleSystemQuad* particle = particles[i];
+        if (!particle || !particle->getParent()) continue;
+        CCPoint point = i >= 3 ? exhaust : foot;
+        if (parent && parent != particle->getParent())
+            point = particle->getParent()->convertToNodeSpace(parent->convertToWorldSpace(point));
+        particle->setPosition(point);
+    }
 }
 
 void PlayerObject::setFlipX(bool flip)
@@ -549,12 +627,28 @@ void PlayerObject::updateShipRotation(float dt)
 
 void PlayerObject::updateGlowColor()
 {
-
+    m_glowColor1 = m_iconSprite->getColor();
+    m_glowColor2 = m_iconSpriteSecondary->getColor();
+    // Preserve the asset's opacity curve while tinting dust to the chosen icon.
+    ccColor4F start = m_dragParticle->getStartColor();
+    ccColor4F end = m_dragParticle->getEndColor();
+    start.r = end.r = m_glowColor1.r / 255.0f;
+    start.g = end.g = m_glowColor1.g / 255.0f;
+    start.b = end.b = m_glowColor1.b / 255.0f;
+    m_dragParticle->setStartColor(start);
+    m_dragParticle->setEndColor(end);
 }
 
 void PlayerObject::updateJump(float dt)
 {
-	double gravity = m_gravity;
+    if (m_flyMode) {
+        // Ship thrust opposes gravity while held; clamp terminal velocity.
+        m_yVelocity += (unk_0x30e ? 0.7 : -0.5) * dt * flipMod();
+        m_yVelocity = MAX(-8.0, MIN(8.0, m_yVelocity));
+        m_onGround = false;
+        return;
+    }
+    double gravity = m_gravity;
 	double gravity2;
 	if (m_rollMode || (isFlying()))
 		gravity2 = 0.958199;
@@ -580,14 +674,12 @@ void PlayerObject::updateJump(float dt)
 			m_onGround = false;
 			m_canJump = false;
 			unk_0x312 = false;
+			deactivateParticle();
 
 			m_yVelocity = m_yStart * flipMod() * pScale;
 			this->incrementJumps();
 			if (m_rollMode != false) {
-				/*flipGravity(this, (bool)(!m_gravityFlipped), true);
-				dVar11 = (double)__muldf3(*(undefined4 *)pdVar8, *(undefined4 *)((int)&m_yVelocity + 4)
-					, 0x40000000, 0x3fe33333);
-				*pdVar8 = dVar11;*/
+				flipGravity(!m_gravityFlipped, true);
 				unk_0x316 = 0;
 				unk_0x30e = false;
 				return;
@@ -735,7 +827,7 @@ void PlayerObject::updatePlayerBirdFrame(int bFrame)
 	m_vehicleSprite->setDisplayFrame(CCSpriteFrameCache::sharedSpriteFrameCache()->spriteFrameByName(birdFrame1));
 	m_vehicleSpriteSecondary->setDisplayFrame(CCSpriteFrameCache::sharedSpriteFrameCache()->spriteFrameByName(birdFrame2));
 	m_vehicleGlow->setDisplayFrame(CCSpriteFrameCache::sharedSpriteFrameCache()->spriteFrameByName(birdFrameGlow));
-	m_vehicleSpriteThird->setDisplayFrame(CCSpriteFrameCache::sharedSpriteFrameCache()->spriteFrameByName(birdFrame2));
+	m_vehicleSpriteThird->setDisplayFrame(CCSpriteFrameCache::sharedSpriteFrameCache()->spriteFrameByName(birdFrame3));
 	CCSize iconSize = m_vehicleSprite->getContentSize();
 	m_vehicleSpriteSecondary->setPosition(ccp(iconSize.width * 0.5f, iconSize.height * 0.5f));
 	m_vehicleSpriteThird->setPosition(m_vehicleSpriteSecondary->getPosition());
@@ -790,9 +882,12 @@ void PlayerObject::levelFlipFinished()
 
 void PlayerObject::hitGround(bool notFlipped)
 {
-	m_yVelocity = 0;
+    // Collision substeps apply gravity even on an existing contact. Those tiny
+    // corrections are not new landings and must not spawn another dust burst.
+    bool landingImpact = fabs(m_yVelocity) > 1.0;
+    m_yVelocity = 0;
 
-	if ((!m_onGround && !notFlipped) && !levelFlipping()) {
+	if ((!m_onGround && !notFlipped) && !levelFlipping() && landingImpact) {
 		CCParticleSystemQuad* landParticle;
 		if (unk_0x368)
 			landParticle = m_landParticle;
@@ -818,6 +913,9 @@ void PlayerObject::hitGround(bool notFlipped)
 
 	m_lastGroundPos = this->getPosition();
 	if (!isFlying()) {
+		if (!m_pGroundActive) m_dragParticle->resumeSystem();
+		m_pGroundActive = true;
+		stopActionByTag(2);
 		this->deactivateStreak();
 		this->tryPlaceCheckpoint();
 	}
@@ -826,42 +924,39 @@ void PlayerObject::hitGround(bool notFlipped)
 
 void PlayerObject::ringJump()
 {
-	// todo
+    // A fresh airborne press stays pending while held until entering an orb.
+    // Ground jumps/orb jumps consume it, and release cancels it.
+    if (!unk_0x30e || !unk_0x312 || !m_touchedRing || m_touchedRing->getHasBeenActivated()) return;
+    unk_0x312 = false;
+    m_touchedRing->triggerActivated();
+    if (m_touchedRing->getType() == BlueOrb) flipGravity(!m_gravityFlipped, false);
+    m_yVelocity = m_yStart * flipMod() * (m_touchedRing->getType() == PinkOrb ? 0.65f : 1.0f);
+    m_onGround = false; m_isJumping = true; m_canJump = false;
+    deactivateParticle();
+    incrementJumps(); runRotateAction();
 }
 
 void PlayerObject::collidedWithObject(float dt, GameObject* obj)
 {
-	CCRect playerRect = this->getObjectRect();
-	CCRect objRect = obj->getObjectRect();
-
-	float objMaxY = objRect.getMaxY();
-	float objMinY = objRect.getMinY();
-
-	// currently used as a placeholder since this is a pretty big function
-	if (false) {
-		if (this->getObjectRect(0.3f, 0.3f).intersectsRect(obj->getObjectRect())) {
-			if ((true) && (isSafeFlip())) {
-				CCPoint moveToPos;
-				if (!m_gravityFlipped)
-					moveToPos = ccp(getPosition().x, getPosition().y - objMinY);
-				else
-					// moveToPos = ccp(getPosition().x, (float)((ulonglong)uVar11 >> 0x20));
-				this->setPosition(moveToPos);
-				this->hitGround(true);
-				m_onGround = false;
-			}
-			else {
-				if (obj->getType() == GameObjectType::unk22) {
-					// obj->destroyObject();
-				}
-				else {
-					if (!PLAY_LAYER->getPlaybackMode())
-						PLAY_LAYER->destroyPlayer();
-				}
-			}
-		}
-	}
-
+    CCRect player = getObjectRect(), block = obj->getObjectRect();
+    if (!player.intersectsRect(block)) return;
+    float half = player.size.height * 0.5f;
+    // Previous position distinguishes a landing from running into a wall.
+    if (!m_gravityFlipped && m_yVelocity <= 0 && m_lastUpdatePos.y - half >= block.getMaxY() - 1.0f) {
+        setPosition(ccp(getPosition().x, block.getMaxY() + half));
+        hitGround(false);
+        m_isJumping = false;
+        return;
+    }
+    if (m_gravityFlipped && m_yVelocity >= 0 && m_lastUpdatePos.y + half <= block.getMinY() + 1.0f) {
+        setPosition(ccp(getPosition().x, block.getMinY() - half));
+        hitGround(false);
+        m_isJumping = false;
+        return;
+    }
+    // A smaller inner cube avoids lethal edge contact while standing on a block.
+    if (getObjectRect(0.3f, 0.3f).intersectsRect(block) && !PLAY_LAYER->getPlaybackMode())
+        PLAY_LAYER->destroyPlayer();
 }
 
 // the saxophones are getting louder.
@@ -924,7 +1019,7 @@ void PlayerObject::toggleFlyMode(bool enable)
 
 		this->stopRotation();
 		m_yVelocity = m_yVelocity * 0.5;
-		this->setVisible(false);
+		this->setVisible(true);
 		m_onGround = false;
 		m_canJump = false;
 		unk_0x310 = false;
@@ -997,7 +1092,8 @@ void PlayerObject::toggleGhostEffect(GhostType type)
 
 void PlayerObject::togglePlayerScale(bool scaled)
 {
-
+    m_playerScale = scaled ? 0.6f : 1.0f;
+    setScale(m_playerScale);
 }
 
 void PlayerObject::touchedObject(GameObject* obj)
@@ -1059,7 +1155,11 @@ void PlayerObject::setupStreak()
 
 }
 
-void PlayerObject::flipGravity(bool, bool)
+void PlayerObject::flipGravity(bool flipped, bool force)
 {
-
+    if (m_gravityFlipped == flipped) return;
+    m_gravityFlipped = flipped;
+    m_onGround = false;
+    m_canJump = false;
+    if (force) m_yVelocity = 0;
 }

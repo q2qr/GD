@@ -109,7 +109,22 @@ bool GJGarageLayer::init()
 	m_playerObject->setPosition(floorLine->getPosition() + ccp(0.0f, 30.0f));
 	this->updatePlayerColors();
 
-	setupIconSelect();
+    setupIconSelect();
+    CCMenu* palette = CCMenu::create();
+    palette->setPosition(CCPointZero);
+    addChild(palette, 100);
+    for (int channel = 0; channel < 2; ++channel) {
+        CCLabelBMFont* label = CCLabelBMFont::create(channel ? "2" : "1", "bigFont.fnt");
+        label->setScale(0.35f); label->setPosition(ccp(24, 62 - channel * 25)); addChild(label);
+        for (int color = 0; color <= 18; ++color) {
+            CCLayerColor* swatch = CCLayerColor::create(ccc4(GM->colorForIdx(color).r, GM->colorForIdx(color).g, GM->colorForIdx(color).b, 255), 18, 18);
+            swatch->ignoreAnchorPointForPosition(false);
+            CCMenuItemSpriteExtra* item = CCMenuItemSpriteExtra::create(swatch, NULL, this, menu_selector(GJGarageLayer::onColor));
+            item->setTag(channel * 100 + color);
+            item->setPosition(ccp(43 + color * 22, 62 - channel * 25));
+            palette->addChild(item);
+        }
+    }
 
     return true;
 }
@@ -129,7 +144,7 @@ void GJGarageLayer::setupIconSelect()
 	CCSprite* unlockTxt = CCSprite::createWithSpriteFrameName("GJ_unlockTxt_001.png");
 	this->addChild(unlockTxt);
 	unlockTxt->setAnchorPoint(ccp(0.5, 0.5));
-	unlockTxt->setPosition(base->getPosition() + ccp(120, (winSize.height * 0.5) + 12));
+	unlockTxt->setVisible(false);
 
 	CCMenu* buttonMenu = CCMenu::create();
 	this->addChild(buttonMenu, 100);
@@ -160,17 +175,17 @@ void GJGarageLayer::setupIconSelect()
 		CCSprite::createWithSpriteFrameName("gj_birdBtn_on_001.png"), this, menu_selector(GJGarageLayer::onSelectTab));
 	unk_0x148->setSizeMult(1.2f);
 	buttonMenu->addChild(unk_0x148);
-	unk_0x144->setTag(3);
+	unk_0x148->setTag(3);
 
 	unk_0x14c = CCMenuItemToggler::create(
 		CCSprite::createWithSpriteFrameName("gj_streakBtn_off_001.png"),
 		CCSprite::createWithSpriteFrameName("gj_streakBtn_on_001.png"), this, menu_selector(GJGarageLayer::onSelectTab));
 	unk_0x14c->setSizeMult(1.2f);
 	buttonMenu->addChild(unk_0x14c);
-	unk_0x144->setTag(99);
+	unk_0x14c->setTag(99);
 	
 	buttonMenu->alignItemsHorizontallyWithPadding(0.0f);
-	buttonMenu->setPosition(base->getPosition() + ccp(-125, (winSize.height * 0.5) + 18));
+	buttonMenu->setPosition(ccp(winSize.width * 0.5f, 185.0f));
 
 	unk_0x130 = CCArray::create();
 	unk_0x130->retain();
@@ -198,6 +213,13 @@ void GJGarageLayer::setupIconSelect()
 	selectPage(IconType::Cube);
 }
 
+void GJGarageLayer::onColor(CCObject* sender)
+{
+    int tag = ((CCNode*)sender)->getTag();
+    if (tag >= 100) GM->setPlayerColor2(tag - 100); else GM->setPlayerColor(tag);
+    updatePlayerColors();
+}
+
 void GJGarageLayer::updatePlayerColors()
 {
 	GameManager* pGameManager = GameManager::sharedState();
@@ -221,30 +243,51 @@ void GJGarageLayer::onSelectTab(CCObject* sender)
 
 void GJGarageLayer::onPlayerIcon(CCObject* sender)
 {
-
+    int id = ((CCNode*)sender)->getTag();
+    GM->setPlayerFrame(id);
+    m_playerObject->updatePlayerFrame(id, IconType::Cube);
+    updatePlayerColors();
 }
 
 void GJGarageLayer::onShipIcon(CCObject* sender)
 {
-
+    int id = ((CCNode*)sender)->getTag();
+    GM->setPlayerShip(id);
+    m_playerObject->updatePlayerFrame(id, IconType::Ship);
+    updatePlayerColors();
 }
 
 void GJGarageLayer::onBallIcon(CCObject* sender)
 {
-
+    int id = ((CCNode*)sender)->getTag();
+    GM->setPlayerBall(id);
+    m_playerObject->updatePlayerFrame(id, IconType::Ball);
+    updatePlayerColors();
 }
 
 void GJGarageLayer::onBirdIcon(CCObject* sender)
 {
-
+    int id = ((CCNode*)sender)->getTag();
+    GM->setPlayerBird(id);
+    m_playerObject->updatePlayerFrame(id, IconType::UFO);
+    updatePlayerColors();
 }
 
 void GJGarageLayer::onSpecialIcon(CCObject* sender)
 {
-
+    GM->setPlayerStreak(((CCNode*)sender)->getTag());
 }
 
 void GJGarageLayer::selectPage(IconType type)
 {
-
+    int selected = type == IconType::Special ? 4 : (int)type;
+    CCMenuItemToggler* tabs[] = {unk_0x13c, unk_0x140, unk_0x144, unk_0x148, unk_0x14c};
+    for (int i = 0; i < 5; ++i) {
+        tabs[i]->setDontToggle(true);
+        tabs[i]->toggle(i == selected);
+        ((CCNode*)unk_0x130->objectAtIndex(i))->setVisible(i == selected);
+    }
+    int id = type == IconType::Ship ? GM->getPlayerShip() : type == IconType::Ball ? GM->getPlayerBall() : type == IconType::UFO ? GM->getPlayerBird() : GM->getPlayerFrame();
+    if (type != IconType::Special) m_playerObject->updatePlayerFrame(id, type);
+    updatePlayerColors();
 }

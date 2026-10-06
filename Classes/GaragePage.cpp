@@ -1,4 +1,6 @@
 #include "GaragePage.h"
+#include "GameManager.h"
+#include "RT_COCOS/CCMenuItemSpriteExtra.h"
 USING_NS_CC;
 
 
@@ -22,21 +24,62 @@ bool GaragePage::init(IconType type, GJGarageLayer* garage, SEL_MenuHandler sele
 	if (!CCLayer::init())
 		return false;
 
-	// unk_0x10c = unk;
-	// unk_0x110 = unk;
-	// unk_0x114 = unk;
-	// unk_0x11c = unk;
-
-	CCSize winSize = CCDirector::sharedDirector()->getWinSize();
-
-	unk_0x118 = CCSprite::createWithSpriteFrameName("GJ_select_001.png");
-	unk_0x118->setScale(0.85f);
-	this->addChild(unk_0x118, 1);
-
-	// yeah this function is pretty complicated soooooooo
-	// TODO: whenever i care to properly finish it
-
+    CCSize winSize = CCDirector::sharedDirector()->getWinSize();
+    m_page = 0;
+    m_buttons = CCArray::create(); // retained by a child menu below; array lifetime matches this layer
+    m_buttons->retain();
+    CCMenu* menu = CCMenu::create();
+    menu->setPosition(CCPointZero);
+    addChild(menu);
+    m_count = type == IconType::Cube ? 38 : type == IconType::Ship ? 14 : 7;
+    for (int id = 1; id <= m_count; ++id) {
+        CCNode* image;
+        if (type == IconType::Special) {
+            CCLabelBMFont* label = CCLabelBMFont::create(CCString::createWithFormat("%i", id)->getCString(), "bigFont.fnt");
+            label->setScale(0.6f);
+            image = label;
+        } else {
+            SimplePlayer* icon = SimplePlayer::create(1);
+            icon->updatePlayerFrame(id, type);
+            icon->setColor(GM->colorForIdx(GM->getPlayerColor()));
+            icon->setSecondColor(GM->colorForIdx(GM->getPlayerColor2()));
+            // SimplePlayer draws around its origin; give its menu wrapper a real hit area.
+            CCNode* wrapper = CCNode::create();
+            wrapper->setContentSize(CCSize(34, 34));
+            wrapper->addChild(icon);
+            icon->setPosition(ccp(17, 17));
+            image = wrapper;
+        }
+        CCMenuItemSpriteExtra* item = CCMenuItemSpriteExtra::create(image, NULL, garage, selector);
+        item->setTag(id);
+        item->setPosition(ccp(winSize.width * 0.5f - 180 + ((id - 1) % 10) * 40, 145 - (((id - 1) % 20) / 10) * 42));
+        menu->addChild(item);
+        m_buttons->addObject(item);
+    }
+    if (m_count > 20) {
+        for (int direction = -1; direction <= 1; direction += 2) {
+            CCLabelBMFont* label = CCLabelBMFont::create(direction < 0 ? "<" : ">", "bigFont.fnt");
+            label->setScale(0.5f);
+            CCMenuItemSpriteExtra* arrow = CCMenuItemSpriteExtra::create(label, NULL, this, menu_selector(GaragePage::onPage));
+            arrow->setTag(direction);
+            arrow->setPosition(ccp(winSize.width * 0.5f + direction * 210, 124));
+            menu->addChild(arrow);
+        }
+    }
+    refresh();
     return true;
+}
+
+void GaragePage::onPage(CCObject* sender)
+{
+    m_page = (m_page + ((CCNode*)sender)->getTag() + (m_count + 19) / 20) % ((m_count + 19) / 20);
+    refresh();
+}
+
+void GaragePage::refresh()
+{
+    for (unsigned i = 0; i < m_buttons->count(); ++i)
+        ((CCNode*)m_buttons->objectAtIndex(i))->setVisible((int)i / 20 == m_page);
 }
 
 void GaragePage::onSelect(CCObject* sender)

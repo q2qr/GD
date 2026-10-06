@@ -6,8 +6,15 @@
 
 class GaragePage : public cocos2d::CCLayer {
 public:
+	~GaragePage() { CC_SAFE_RELEASE(m_buttons); }
+	GaragePage() : m_buttons(NULL) {}
 	static GaragePage* create(IconType type, GJGarageLayer* garage, cocos2d::SEL_MenuHandler selector);
 	bool init(IconType type, GJGarageLayer* garage, cocos2d::SEL_MenuHandler selector);
+	void onPage(cocos2d::CCObject* sender);
+	void refresh();
+	int m_page;
+	int m_count;
+	cocos2d::CCArray* m_buttons;
 	void onSelect(cocos2d::CCObject* sender);
 
 	cocos2d::CCSprite* unk_0x118; // 0x118

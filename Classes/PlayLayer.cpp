@@ -9,6 +9,8 @@
 #include "GameStatsManager.h"
 #include "RetryLevelLayer.h"
 #include "GameSoundManager.h"
+#include <cmath>
+#include <algorithm>
 using namespace CocosDenshion;
 USING_NS_CC;
 
@@ -69,6 +71,7 @@ PlayLayer::PlayLayer()
 
 	m_levelLength = 0.0f;
 	m_realLevelLength = 0.0f;
+	m_lastRunPercent = 0;
 }
 
 void PlayLayer::onQuit()
@@ -107,6 +110,8 @@ CCScene* PlayLayer::scene(GJGameLevel* level)
 
 void PlayLayer::createObjectsFromSetup(std::string setup)
 {
+	m_levelLength = 0.0f;
+	m_realLevelLength = 0.0f;
 
 	CCArray* parts = splitString(setup);
 
@@ -117,9 +122,9 @@ void PlayLayer::createObjectsFromSetup(std::string setup)
 	m_levelSettings->retain();
 
 
-	/*m_levelSettings->updateColors(
+	m_levelSettings->updateColors(
 		m_player->getGlowColor1(),
-		m_player->getGlowColor2());*/
+		m_player->getGlowColor2());
 
 	m_tintObjectsUseBlend = m_levelSettings->getTintObjectsUseBlend();
 
@@ -134,20 +139,31 @@ void PlayLayer::createObjectsFromSetup(std::string setup)
 		
 		if (obj)
 		{
-			// obj->setVisible(false);
+			obj->setVisible(!obj->getIsInvisible());
 
 			//if (!obj->getBlendAdditive())
 
 
 			//obj->setObjectParent(m_batchNode);
 			
-			obj->customSetup();
+			int key = obj->getObjectKey();
+			if (key == 29 || key == 30 || key == 104 || key == 105 || key == 221)
+				m_colorTriggers.push_back(obj);
+			if (obj->getPosition().x > m_realLevelLength)
+				m_realLevelLength = obj->getPosition().x;
 			this->addToSection(obj);
-			m_batchNode->addChild(obj);
+			(obj->getBlendAdditive() ? m_batchNodeAdd : m_batchNode)->addChild(obj);
+			if (obj->getColorSprite()) m_gameLayer->addChild(obj->getColorSprite(), 2);
 
 		}
 
 	}
+
+	// The decompiled setup parser omitted the original length bookkeeping. The furthest
+	// parsed object gives us a safe progress denominator for the loaded level geometry.
+	m_levelLength = m_realLevelLength;
+	std::stable_sort(m_colorTriggers.begin(), m_colorTriggers.end(),
+		[](GameObject* a, GameObject* b) { return a->getSpawnXPos() < b->getSpawnXPos(); });
 }
 
 bool PlayLayer::init(GJGameLevel* level)
@@ -309,7 +325,10 @@ bool PlayLayer::init(GJGameLevel* level)
 	m_background->setBlendFunc(bgBlendFunc);
 	m_background->setColor(ccc3(40, 125, 255));
 	unk_0x15c = m_background->getTextureRect().size.height * m_background->getScale();
-	m_background->setTextureRect(m_background->getTextureRect());
+	CCRect bgRect = m_background->getTextureRect();
+    bgRect.size.width *= ceilf(winSize.width / (bgRect.size.width * m_background->getScale())) + 1;
+    bgRect.size.height *= ceilf(winSize.height / (bgRect.size.height * m_background->getScale())) + 1;
+    m_background->setTextureRect(bgRect);
 
 	m_ground = GJGroundLayer::create(m_levelSettings->getGIdx());
 	m_gameLayer->addChild(m_ground, 4);
@@ -455,7 +474,20 @@ void PlayLayer::resetLevel()
 
 	m_cameraPortal = nullptr;
 	//m_audioEffectsLayer->resetAudioVars();
-	m_player->resetObject();
+	for (unsigned section = 0; section < m_sections->count(); ++section) {
+        CCArray* objects = (CCArray*)m_sections->objectAtIndex(section);
+        for (unsigned i = 0; i < objects->count(); ++i)
+            ((GameObject*)objects->objectAtIndex(i))->resetObject();
+    }
+    m_player->resetObject();
+	m_nextColorTrigger = 0;
+	m_tintObjectsUseBlend = m_levelSettings->getTintObjectsUseBlend();
+	tintBackground(m_levelSettings->getStartBGColor(), 0.0f);
+	tintGround(m_levelSettings->getStartGColor(), 0.0f);
+	tintLine(m_levelSettings->getStartLineColor(), 0.0f);
+	tintObjects(m_levelSettings->getStartObjColor(), 0.0f);
+	tintColorObjects(m_levelSettings->getStartTintObjColor(), 0.0f);
+	updateLevelColors();
 	this->animateOutFlyGround(true);
 	this->animateOutRollGround(true);
 
@@ -529,19 +561,30 @@ void PlayLayer::update(float dt)
 
 		m_player->setTouchedRing(nullptr);
 
-	for (int i = 0; i > m_stateObjects->count(); ++i)
+	for (int i = 0; i < m_stateObjects->count(); ++i)
 		((GameObject*)(m_stateObjects->objectAtIndex(i)))->setStateVar(false);
 
-	for (int i = 0; i > m_activeObjects->count(); ++i)
+	for (int i = 0; i < m_activeObjects->count(); ++i)
 		m_activeObjects->objectAtIndex(i)->update(step);
 	
-	m_player->update(step);
-	this->checkCollisions(step / 4);
+	// Resolve contacts between small movement steps to avoid tunnelling at low frame rates.
+    int substeps = (int)ceilf(step * 4.0f);
+    substeps = MAX(1, MIN(substeps, 120));
+    for (int sub = 0; sub < substeps && !m_player->getIsDead(); ++sub) {
+        m_player->update(step / substeps);
+        this->checkCollisions(step / substeps);
+    }
+	if (!m_player->getOnGround()) m_player->deactivateParticle();
+	while (!m_playerDead && m_nextColorTrigger < m_colorTriggers.size() &&
+		m_colorTriggers[m_nextColorTrigger]->getSpawnXPos() <= m_player->getPosition().x) {
+		GameObject* trigger = m_colorTriggers[m_nextColorTrigger++];
+		if (!trigger->getTouchTriggered()) trigger->triggerObject();
+	}
 
 	if (m_player->isFlying())
 		m_player->updateShipRotation(step);
 
-	for (int i = 0; 0 < m_stateObjects->count(); i = i + 1) {
+	for (int i = 0; i < m_stateObjects->count(); i = i + 1) {
 		((GameObject *)m_stateObjects->objectAtIndex(i))->updateState();
 	}
 
@@ -603,11 +646,11 @@ void PlayLayer::updateCamera(float dt)
 		targetY = playerPos.y - 90.0f;
 	}
 
-	camPos.y += (targetY - camPos.y) / (10.0f / dt);
+	if (dt > 0) camPos.y += (targetY - camPos.y) * MIN(dt / 10.0f, 1.0f);
 
 	float maxY = 1740.0f - screenHeight;
 	if (camPos.y < 0.0f) camPos.y = 0.0f;
-	else if (camPos.y > maxY) camPos.y = 1740.0f;
+	else if (camPos.y > maxY) camPos.y = maxY;
 
 	camPos.x = playerPos.x - 125.0f;
 
@@ -616,11 +659,24 @@ void PlayLayer::updateCamera(float dt)
 	CCCamera* camera = m_gameLayer->getCamera();
 	camera->setCenterXYZ(camPos.x, camPos.y, 0.0f);
 	camera->setEyeXYZ(camPos.x, camPos.y, camera->getZEye());
+
+    m_ground->updateScroll(camPos.x);
+    // The background is outside the world camera; emulate its slower parallax.
+    CCSize tile = m_background->getTexture()->getContentSize();
+    float tileWidth = tile.width * m_background->getScaleX();
+    float tileHeight = tile.height * m_background->getScaleY();
+    float phaseX = tileWidth > 0 ? fmodf(fmodf(camPos.x * 0.1f, tileWidth) + tileWidth, tileWidth) : 0;
+    float phaseY = tileHeight > 0 ? fmodf(fmodf(camPos.y * 0.1f, tileHeight) + tileHeight, tileHeight) : 0;
+    m_background->setPosition(ccp(-phaseX, -phaseY));
 }
 
 void PlayLayer::updateProgressbar()
 {
-    
+    if (!m_progressBar || !m_progressFill) return;
+    m_progressBar->setVisible(GM->getShowProgressBar());
+    float fraction = m_levelLength > 0 ? m_realPlayerPos.x / m_levelLength : 0;
+    fraction = MAX(0.0f, MIN(1.0f, fraction));
+    m_progressFill->setScaleX((m_progressBar->getContentSize().width - 4.0f) * fraction / m_progressFill->getContentSize().width);
 }
 
 void PlayLayer::updateEffectPositions()
@@ -630,14 +686,42 @@ void PlayLayer::updateEffectPositions()
 
 void PlayLayer::updateLevelColors()
 {
-	// todo: finish
 	m_ground->getGroundSprite()->setColor(m_gColorRef->getColor());
-
+	m_rollGroundTop->getGroundSprite()->setColor(m_gColorRef->getColor());
+	m_rollGroundBottom->getGroundSprite()->setColor(m_gColorRef->getColor());
+	m_rollGroundTop->getLine()->setColor(m_ground->getLine()->getColor());
+	m_rollGroundBottom->getLine()->setColor(m_ground->getLine()->getColor());
+	unk_0x140->setColor(m_gColorRef->getColor());
+	for (unsigned section = 0; section < m_sections->count(); ++section) {
+		CCArray* objects = (CCArray*)m_sections->objectAtIndex(section);
+		for (unsigned i = 0; i < objects->count(); ++i) {
+			GameObject* obj = (GameObject*)objects->objectAtIndex(i);
+			ccColor3B color = obj->getIsTintObject() ? m_objColorRef->getColor() : ccc3(255, 255, 255);
+			if (obj->getUsePlayerColor()) color = m_player->getGlowColor1();
+			else if (obj->getUsePlayerColor2()) color = m_player->getGlowColor2();
+			else if (obj->getUseBGColor()) color = m_background->getColor();
+			obj->setColor(color);
+			if (obj->getColorSprite()) {
+				obj->getColorSprite()->setPosition(obj->getPosition());
+				obj->getColorSprite()->setRotation(obj->getRotation());
+				obj->getColorSprite()->setScaleX(obj->getScaleX());
+				obj->getColorSprite()->setScaleY(obj->getScaleY());
+				obj->getColorSprite()->setFlipX(obj->isFlipX());
+				obj->getColorSprite()->setFlipY(obj->isFlipY());
+				obj->getColorSprite()->setVisible(obj->isVisible());
+				obj->getColorSprite()->setOpacity(obj->getOpacity());
+				obj->getColorSprite()->setColor(field_0x1f4->getColor());
+				obj->getColorSprite()->setBlendFunc(m_tintObjectsUseBlend ? ccBlendFunc{GL_SRC_ALPHA, GL_ONE} : ccBlendFunc{GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA});
+			}
+		}
+	}
 }
 
 void PlayLayer::tintBackground(ccColor3B color, float duration)
 {
-    m_background->setColor(color);
+	m_background->stopAllActions();
+	if (duration <= 0.0f) m_background->setColor(color);
+	else m_background->runAction(CCTintTo::create(duration, color.r, color.g, color.b));
 }
 
 void PlayLayer::tintGround(ccColor3B color, float duration)
@@ -656,17 +740,24 @@ void PlayLayer::tintGround(ccColor3B color, float duration)
 
 void PlayLayer::tintLine(ccColor3B color, float duration)
 {
-    m_ground->getLine()->setColor(color);
+	CCSprite* line = m_ground->getLine();
+	line->stopAllActions();
+	if (duration <= 0.0f) line->setColor(color);
+	else line->runAction(CCTintTo::create(duration, color.r, color.g, color.b));
 }
 
 void PlayLayer::tintObjects(ccColor3B color, float duration)
 {
-
+	m_objColorRef->stopAllActions();
+	if (duration <= 0.0f) m_objColorRef->setColor(color);
+	else m_objColorRef->runAction(CCTintTo::create(duration, color.r, color.g, color.b));
 }
 
 void PlayLayer::tintColorObjects(ccColor3B color, float duration)
 {
-
+	field_0x1f4->stopAllActions();
+	if (duration <= 0.0f) field_0x1f4->setColor(color);
+	else field_0x1f4->runAction(CCTintTo::create(duration, color.r, color.g, color.b));
 }
 
 ccColor3B PlayLayer::getLineColor()
@@ -738,7 +829,7 @@ void PlayLayer::toggleAudioRain(bool toggle)
 
 void PlayLayer::registerStateObject(GameObject* obj)
 {
-	if (m_stateObjects->containsObject(obj)) {
+	if (!m_stateObjects->containsObject(obj)) {
 		m_stateObjects->addObject(obj);
 	}
 }
@@ -816,10 +907,10 @@ void PlayLayer::switchToFlyMode(GameObject* obj, bool param_1, bool param_2)
 		m_cameraPortal = obj;
 	}
 
-	/*if (param_2)
-		m_player->toggleBirdMode(true);
-	else
-		m_player->toggleFlyMode(true);*/
+	if (param_2)
+        m_player->toggleBirdMode(true);
+    else
+        m_player->toggleFlyMode(true);
 
 	this->toggleGlitter(true);
 
@@ -999,135 +1090,54 @@ void PlayLayer::animateOutRollGroundFinished()
 
 void PlayLayer::checkCollisions(float dt)
 {
-	float playerScale = m_player->getPlayerScale();
-	if (playerScale != 1.0f)
-		playerScale = 1.0f - playerScale;
-
-	float balancer;
-	if (playerScale == 1.0f)
-		balancer = 0.0f;
-	else
-		balancer = (playerScale * 30.0f) * 0.5f;
-
-	if (m_player->getPosition().y > (105.0f - balancer) || m_player->isFlying()) {
-		if (m_player->getPosition().y > (balancer + 1890.0f)) {
-			this->destroyPlayer();
-			return;
-		}
-	}
-	else {
-		if (m_player->getGravityFlipped()) {
-			if (m_player->isSafeFlip()) {
-				m_player->setPosition(ccp(m_player->getPosition().x, 105.0f - balancer));
-				m_player->hitGround(true);
-				return;
-			}
-			this->destroyPlayer();
-			return;
-		}
-
-		if (!m_player->getIsJumping()) {
-			m_player->setPosition(ccp(m_player->getPosition().x, 105.0f - balancer));
-			m_player->hitGround(false);
-		}
-	}
-
-	if (m_player->isFlying() || m_player->getRollMode()) {
-	}
-
-	// welcome to the worst switch statement i've had to write so far
-	int currentSection = this->sectionForPos(m_player->getPosition());
-	int idx;
-	GameObject* currentObject;
-	for (idx = currentSection - 1; idx <= currentSection + 1; idx = idx + 1) {
-		if ((-1 < idx) && (idx < m_sections->count()))
-		{
-			CCArray* this_00 = (CCArray *)m_sections->objectAtIndex(idx);
-			for (int objIdx = 0; objIdx < this_00->count(); objIdx = objIdx + 1
-				) {
-				currentObject = (GameObject *)this_00->objectAtIndex(objIdx);
-				if (currentObject->getIsSleeping())
-					return;
-
-				if (currentObject->getType() == Hazard) {
-					m_hazardsArray->addObject(currentObject);
-					goto LAB_0018ffd8;
-				}
-
-				if ((currentObject->getIsDisabled()) || (currentObject->getHasBeenActivated()))
-					return;
-
-				if (!(m_player->getObjectRect().intersectsRect(currentObject->getObjectRect())))
-
-				switch (currentObject->getType()) {
-				case InvertGravityPortal:
-					if (!m_player->getGravityFlipped()) {
-						// this->playGravityEffect(true);
-					}
-					m_player->setPortalP(currentObject->getPosition());
-					m_player->setPortalObject(currentObject);
-					// m_player->flipGravity(true, false);
-					break;
-				case NormalGravityPortal:
-					if (m_player->getGravityFlipped()) {
-						// this->playGravityEffect(false);
-					}
-					m_player->setPortalP(currentObject->getPosition());
-					m_player->setPortalObject(currentObject);
-					// m_player->flipGravity(false, false);
-					break;
-				case ShipPortal:
-					this->switchToFlyMode(currentObject, false, false);
-					break;
-				case CubePortal:
-					m_player->setPortalP(currentObject->getPosition());
-					m_player->setPortalObject(currentObject);
-					this->exitFlyMode();
-					this->exitBirdMode();
-					this->exitRollMode();
-					break;
-				default:
-					m_player->collidedWithObject(dt, currentObject);
-					return;
-					// skip some more
-				case YellowPad:
-				case GravityPad:
-					m_player->setPortalP(currentObject->getPosition());
-					currentObject->triggerActivated();
-					if (((currentObject->getType() == GravityPad) && !m_player->getFlyMode()) && !m_player->getBirdMode())
-						m_player->getRollMode();
-
-					m_player->setPortalObject(currentObject);
-					this->switchToFlyMode(currentObject, false, false);
-					// m_player->propellPlayer(fVar3);
-					// goto LAB_0018ffd8;
-					break;
-				}
-			}
-		}
-	}
-
-LAB_0018ffd8:
-
-	unsigned int haIdx = 0;
-	while (true) {
-		if (m_hazardsArray->count() <= haIdx) {
-			m_hazardsArray->removeAllObjects();
-			return;
-		}
-
-		currentObject = (GameObject*)m_hazardsArray->objectAtIndex(haIdx);
-		if ((m_player->getObjectRect().intersectsRect(currentObject->getObjectRect())) && (currentObject->getRadius() <= 0.0f)) // || (objectIntersectsCircle(m_player, currentObject)) && (!m_playbackMode))))
-			break;
-
-		haIdx = haIdx + 1;
-	}
-	this->destroyPlayer();
+    const float floorY = 90.0f + 15.0f * m_player->getPlayerScale();
+    if (!m_player->isFlying() && m_player->getPosition().y <= floorY) {
+        if (m_player->getGravityFlipped()) { destroyPlayer(); return; }
+        m_player->setPosition(ccp(m_player->getPosition().x, floorY));
+        m_player->hitGround(false);
+    }
+    if (m_player->getPosition().y > 1890.0f) { destroyPlayer(); return; }
+    int section = sectionForPos(m_player->getPosition());
+    for (int idx = MAX(0, section - 1); idx <= section + 1 && idx < (int)m_sections->count(); ++idx) {
+        CCArray* objects = (CCArray*)m_sections->objectAtIndex(idx);
+        for (unsigned i = 0; i < objects->count(); ++i) {
+            GameObject* obj = (GameObject*)objects->objectAtIndex(i);
+            if (obj->getTouchTriggered() && !obj->getHasBeenActivated() &&
+                m_player->getObjectRect().intersectsRect(obj->getObjectRect())) obj->triggerObject();
+            if (obj->getIsSleeping() || obj->getIsDisabled()) continue;
+            if (!m_player->getObjectRect().intersectsRect(obj->getObjectRect())) continue;
+            switch (obj->getType()) {
+                case Hazard: destroyPlayer(); return;
+                case None: case unk22: m_player->collidedWithObject(dt, obj); break;
+                case NormalGravityPortal: m_player->flipGravity(false, false); break;
+                case InvertGravityPortal: m_player->flipGravity(true, false); break;
+                case ShipPortal: if (!m_player->getFlyMode()) switchToFlyMode(obj, false, false); break;
+                case CubePortal: exitFlyMode(); exitBirdMode(); exitRollMode(); break;
+                case SmallPortal: m_player->togglePlayerScale(true); break;
+                case BigPortal: m_player->togglePlayerScale(false); break;
+                case BallPortal: if (!m_player->getRollMode()) { exitFlyMode(); exitBirdMode(); m_player->toggleRollMode(true); } break;
+                case YellowPad: case GravityPad: case PinkPad:
+                    if (!obj->getHasBeenActivated()) {
+                        obj->triggerActivated();
+                        if (obj->getType() == GravityPad) m_player->flipGravity(!m_player->getGravityFlipped(), false);
+                        m_player->m_yVelocity = (obj->getType() == PinkPad ? 10.0f : 15.0f) * m_player->flipMod();
+                        m_player->setOnGround(false);
+                    }
+                    break;
+                case YellowOrb: case BlueOrb: case PinkOrb:
+                    m_player->setTouchedRing(obj);
+                    m_player->ringJump();
+                    break;
+                default: break; // Decoration and editor triggers have no solid hitbox.
+            }
+            if (m_player->getIsDead()) return;
+        }
+    }
 }
 
 int PlayLayer::sectionForPos(CCPoint point)
 {
-	return floorf(point.x);
+	return (int)floorf(point.x / 100.0f);
 }
 
 void PlayLayer::recordAction(bool pressed)
@@ -1158,26 +1168,36 @@ void PlayLayer::destroyPlayer()
 		if (!m_showingHint && (m_level->getLevelID() == 3) && !m_player->getHasRingJumped() && m_attempts > 1)
 			this->showHint();
 		
+		int lastRunPercent = 0;
+		if (m_levelLength > 0.0f && std::isfinite(m_levelLength)) {
+			float runPercent = (m_player->getPosition().x / m_levelLength) * 100.0f;
+			if (std::isfinite(runPercent)) {
+				if (runPercent < 0.0f)
+					runPercent = 0.0f;
+				else if (runPercent > 100.0f)
+					runPercent = 100.0f;
+				lastRunPercent = static_cast<int>(runPercent);
+			}
+		}
+
 		bool newBest = true;
 		m_playerDead = true;
 		m_player->playerDestroyed();
 
 		// pfVar3 = m_player->getPosition();
 		if (!m_testMode) {
-			float lastRunPct = (m_player->getPosition().x / m_levelLength) * 100.0f;
-			if (m_practiceMode || (lastRunPct <= m_level->getNormalPercent()))
+			if (m_practiceMode || (lastRunPercent <= m_level->getNormalPercent()))
 				newBest = false;
 
-			m_level->savePercentage(lastRunPct, m_practiceMode);
+			m_level->savePercentage(lastRunPercent, m_practiceMode);
 			if (m_level->getLevelType() == GJLevelType::MainLevel)
-				GM->reportPercentageForLevel(m_level->getLevelID(), lastRunPct, m_practiceMode);
+				GM->reportPercentageForLevel(m_level->getLevelID(), lastRunPercent, m_practiceMode);
 		}
 		else
 			newBest = false;
 
 		if (!m_practiceMode)
-			// m_levelLength is NOT implemented at all because it's set in PlayLayer::createObjectsFromSetup and it's a really confusing function
-			m_lastRunPercent = (m_player->getPosition().x / m_levelLength) * 100.0f;
+			m_lastRunPercent = lastRunPercent;
 			
 		if (!m_practiceMode)
 			SimpleAudioEngine::sharedEngine()->stopBackgroundMusic(false);

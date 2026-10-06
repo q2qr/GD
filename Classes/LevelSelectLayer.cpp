@@ -16,9 +16,10 @@ USING_NS_CC;
 
 LevelSelectLayer::LevelSelectLayer()
 {
-    // mUnknown1 = 0.0f;
-    m_background = NULL;
-    // mGroundLayer = NULL;
+	m_bslDelegate = nullptr;
+	m_background = nullptr;
+	m_ground = nullptr;
+	m_scrollLayer = nullptr;
 }
 
 CCScene* LevelSelectLayer::scene(int page)
@@ -160,15 +161,7 @@ bool LevelSelectLayer::init(int page)
 	m_scrollLayer->setPagesIndicatorPosition(ccp(winSize.width * 0.5f, CCDirector::sharedDirector()->getScreenBottom() + 15.0f));
 	m_scrollLayer->getInternalLayer()->setDelegate(m_bslDelegate);
 
-	if (page == 0) {
-		this->scrollLayerMoved(CCPointZero);
-	}
-	else {
-		if (page == 15) {
-			m_scrollLayer->instantMoveToPage(14);
-		}
-		m_scrollLayer->instantMoveToPage(page);
-	}
+	m_scrollLayer->instantMoveToPage(page);
 
     CCLabelBMFont* downloadTxt = CCLabelBMFont::create("Download the soundtracks", "bigFont.fnt");
     downloadTxt->setScale(0.5f);

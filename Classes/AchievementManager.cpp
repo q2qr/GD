@@ -46,23 +46,13 @@ void AchievementManager::notifyAchievementWithID(char const* achID)
 	}
 }
 
-void AchievementManager::reportAchievementWithID(char const* achID, int percentage, bool param_3)
+void AchievementManager::reportAchievementWithID(char const* achID, int percentage, bool silent)
 {
-	if (!isAchievementEarned(achID)) {
-		if (percentForAchievement(achID) < percentage) {
-			/* imma do this later it's 10pm rn
-			this_00 = (CCDictionary *)(this->data).offset_0x8;
-      		pCVar3 = (CCObject *)cocos2d::CCString::createWithFormat("%i",percentage);
-      		std::string(&pcStack_24,achID,&pAStack_28);
-      		cocos2d::CCDictionary::setObject(this_00,pCVar3,(string *)&pcStack_24);
-      		FUN_003b16dc(&pcStack_24);
-      		pAVar2 = (AchievementManager *)reportPlatformAchievementWithID(this,achID,percentage);*/
-		}
-		if ((99 < percentage) && (!param_3)) {
-			AchievementManager* pAchManager = sharedState();
-			pAchManager->notifyAchievementWithID(achID);
-		}
-	}
+    percentage = MAX(0, MIN(100, percentage));
+    int previous = percentForAchievement(achID);
+    if (percentage <= previous) return;
+    m_reportedAchievements->setObject(CCString::createWithFormat("%i", percentage), achID);
+    if (percentage == 100 && previous < 100 && !silent) notifyAchievementWithID(achID);
 }
 
 bool AchievementManager::isAchievementEarned(char const* achID)
@@ -72,7 +62,10 @@ bool AchievementManager::isAchievementEarned(char const* achID)
 
 bool AchievementManager::areAchievementsEarned(CCArray* achSet)
 {
-	return true;
+    if (!achSet) return false;
+    for (unsigned i = 0; i < achSet->count(); ++i)
+        if (!isAchievementEarned(((CCString*)achSet->objectAtIndex(i))->getCString())) return false;
+    return true;
 }
 
 int AchievementManager::percentForAchievement(char const* achID)

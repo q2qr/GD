@@ -1,10 +1,12 @@
 // Decompiled by ProjectReversio: https://github.com/ProjectReversio/GeometryDash/blob/master/GeometryDash/Classes/LoadingLayer.cpp
 #include "LoadingLayer.h"
+#include "PlayLayer.h"
+#include "LevelTools.h"
+#include <stdlib.h>
 #include "AppDelegate.h"
 #include "GameManager.h"
 #include "GameSoundManager.h"
 #include "MenuLayer.h"
-#include "LevelTools.h"
 #include "TextArea.h"
 #include "PlatformToolbox.h"
 #include "LocalLevelManager.h"

@@ -88,13 +88,15 @@ void RetryLevelLayer::setupLastProgress()
 	progressFill->setPosition(ccp(fillInset * 0.5f, progressBar->getContentSize().height * 0.5f));
 
 	int lastRunPct = PLAY_LAYER->getLastRunPercent();
+	if (lastRunPct < 0)
+		lastRunPct = 0;
+	else if (lastRunPct > 100)
+		lastRunPct = 100;
 	float progressBarW = progressFill->getContentSize().width;
 	float progressFillW = progressBarW * (lastRunPct / 100.0f);
-	if (progressFillW < progressBarW)
-		progressFillW = progressBarW * (lastRunPct / 100.0f);
 	progressFill->setTextureRect(CCRect(0, 0, progressFillW, progressFill->getContentSize().height));
 
-	CCLabelBMFont* pctLabel = CCLabelBMFont::create(CCString::createWithFormat("%i%%", PLAY_LAYER->getLastRunPercent())->getCString(), "bigFont.fnt");
+	CCLabelBMFont* pctLabel = CCLabelBMFont::create(CCString::createWithFormat("%i%%", lastRunPct)->getCString(), "bigFont.fnt");
 	m_internalLayer->addChild(pctLabel, 4);
 	pctLabel->setPosition(progressBar->getPosition());
 	pctLabel->setScale(0.5f);

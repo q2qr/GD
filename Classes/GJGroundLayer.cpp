@@ -44,6 +44,7 @@ bool GJGroundLayer::init(int gID)
 	m_groundSprite->setColor(ccc3(0, 102, 255));
 	ccBlendFunc gBlendFunc = { GL_ONE, GL_ZERO };
 	m_groundSprite->setBlendFunc(gBlendFunc);
+	m_groundWidth = m_groundSprite->getTextureRect().size.width;
 	m_groundSprite->setTextureRect(CCRectMake(0, 0, winSize.width, m_groundSprite->getContentSize().height));
     m_groundSprite->setPosition(ccp(0.0f, 90.0f));
 
@@ -81,6 +82,18 @@ bool GJGroundLayer::init(int gID)
     m_isActive = false;
     
     return true;
+}
+
+void GJGroundLayer::updateScroll(float cameraX)
+{
+    // Ground lives in the camera-controlled world layer. Cancel camera X for
+    // its screen coverage, then advance only the repeating texture coordinates.
+    setPosition(ccp(cameraX, getPositionY()));
+    if (m_groundSprite && m_groundWidth > 0) {
+        CCRect rect = m_groundSprite->getTextureRect();
+        rect.origin.x = fmodf(fmodf(cameraX, m_groundWidth) + m_groundWidth, m_groundWidth);
+        m_groundSprite->setTextureRect(rect);
+    }
 }
 
 void GJGroundLayer::fadeInGround(float duration)

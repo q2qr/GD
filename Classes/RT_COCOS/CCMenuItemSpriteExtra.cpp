@@ -50,7 +50,7 @@ bool CCMenuItemSpriteExtra::init(cocos2d::CCNode* normalSprite, cocos2d::CCNode*
     normalSprite->setAnchorPoint(CCPoint(0.5f, 0.5f));
 
     CCSize size = normalSprite->getContentSize();
-    this->setContentSize(CCSize(size.width * normalSprite->getScaleX(), size.height));
+    this->setContentSize(CCSize(size.width * normalSprite->getScaleX(), size.height * normalSprite->getScaleY()));
 
     normalSprite->setPosition(normalSprite->getParent()->convertToNodeSpace(CCPoint(0.0f, 0.0f)));
 

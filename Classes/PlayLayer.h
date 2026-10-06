@@ -11,6 +11,7 @@
 #include "UILayer.h"
 #include "ColorAction.h"
 #include "EndPortalObject.h"
+#include <vector>
 //#include "GameObject.h"
 
 enum class EnterEffect {
@@ -19,6 +20,8 @@ enum class EnterEffect {
 
 class PlayLayer : public cocos2d::CCLayer {
 public:
+	std::vector<GameObject*> m_colorTriggers;
+	size_t m_nextColorTrigger = 0;
     PlayLayer();
     static cocos2d::CCScene* scene(GJGameLevel* level);
     static PlayLayer* create(GJGameLevel* level);
@@ -62,6 +65,7 @@ public:
     void tintLine(cocos2d::ccColor3B color, float duration);
     void tintObjects(cocos2d::ccColor3B color, float duration);
     void tintColorObjects(cocos2d::ccColor3B color, float duration);
+	void updateTintObjectsUseBlend(bool enabled) { m_tintObjectsUseBlend = enabled; }
 
 	cocos2d::ccColor3B getLineColor();
 	cocos2d::ccColor3B getGColor();

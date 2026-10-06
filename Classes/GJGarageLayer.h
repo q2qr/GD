@@ -15,6 +15,7 @@ public:
 	void setupIconSelect();
 
 	void updatePlayerColors();
+	void onColor(cocos2d::CCObject* sender);
     
 	void onBack(cocos2d::CCObject* sender);
 	void onSelectTab(cocos2d::CCObject* sender);

@@ -69,8 +69,8 @@ bool MenuGameLayer::init()
 
 	CCRect gTexRect = m_groundSprite->getTextureRect();
 	m_groundSpeed = gTexRect.size.width * m_groundSprite->getScale();
-	int gBalancer = ceil(winSize.width / gTexRect.size.height) + 1; // idk if this is the right name to give the var
-	gTexRect.size.width = gTexRect.size.height * gBalancer;
+	int gBalancer = (int)ceilf(winSize.width / m_groundSpeed) + 1;
+	gTexRect.size.width *= gBalancer;
 	m_groundSprite->setTextureRect(gTexRect);
 	m_groundSprite->setPosition(ccp(0.0f, CCDirector::sharedDirector()->getScreenBottom() + 90.0f));
     
@@ -190,17 +190,11 @@ void MenuGameLayer::update(float delta)
 	}
 
 	m_backgroundPosition = ccp(m_backgroundPosition.x + (step * 5.77f) * 0.9f, 0.0f);
-	CCPoint newBGPos = ccp(-m_backgroundPosition.x * 0.1f, -m_backgroundPosition.y * 0.1f);
-	float i;
-	for (i = newBGPos.x; i < -m_bgSpeed; i += m_bgSpeed);
-	newBGPos.x = i;
-	m_bgSprite->setPosition(newBGPos);
-
-	CCPoint groundPos = ccp(m_backgroundPosition.x, CCDirector::sharedDirector()->getScreenBottom() + 90.0f);
-	for (i = groundPos.x; i < -m_groundSpeed; i += m_groundSpeed);
-	groundPos.x = i;
-	m_groundSprite->setPosition(groundPos);
-
+    // Keep both repeating sprites covering the viewport; never move the floor right.
+    float bgPhase = m_bgSpeed > 0 ? fmodf(m_backgroundPosition.x * 0.1f, m_bgSpeed) : 0;
+    float groundPhase = m_groundSpeed > 0 ? fmodf(m_backgroundPosition.x, m_groundSpeed) : 0;
+    m_bgSprite->setPosition(ccp(-bgPhase, 0));
+    m_groundSprite->setPosition(ccp(-groundPhase, CCDirector::sharedDirector()->getScreenBottom() + 90.0f));
 }
 
 void MenuGameLayer::tryJump(float dt)

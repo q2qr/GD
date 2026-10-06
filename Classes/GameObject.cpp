@@ -1,6 +1,7 @@
 #include "GameObject.h"
 #include "ObjectToolbox.h"
 #include "GameManager.h"
+#include "PlayLayer.h"
 USING_NS_CC;
 
 // hi antimatter some of your code was kind of broken so i fixed it up
@@ -90,8 +91,8 @@ bool GameObject::init(const char *spriteName) {
     m_frame = spriteName;
     m_shouldSpawn = false;
 	// set to 0.1f for now since i just CANNOT figure out what these variables are, probably some inlined functions in CCSprite...
-	unk_0x1d4 = 1.0f; // 0x138
-	unk_0x1d8 = 1.0f; // 0x13c
+	unk_0x1d4 = getContentSize().width; // collision dimensions, confirmed in original x86 library
+	unk_0x1d8 = getContentSize().height;
     m_scaleModX = 1.0f;
     m_scaleModY = 1.0f;
     m_startScaleX = 1.0f;
@@ -139,7 +140,9 @@ GameObject* GameObject::objectFromString(std::string objString)
 	bool flipY = objDict->objectForKey("5") ? objDict->valueForKey("5")->boolValue() : false;
 	int rotation = objDict->objectForKey("6") ? objDict->valueForKey("6")->intValue() : 0;
 
-	GameObject* object = GameObject::create(frame);
+	// Unknown custom objects must not assert inside CCSprite::initWithSpriteFrameName.
+    if (!frame || !*frame || !CCSpriteFrameCache::sharedSpriteFrameCache()->spriteFrameByName(frame)) return nullptr;
+    GameObject* object = GameObject::create(frame);
 	if (!object) return nullptr;
 
 	object->setObjectKey(objID);
@@ -151,7 +154,30 @@ GameObject* GameObject::objectFromString(std::string objString)
 	object->m_startPos = startPos;
 	object->setPosition(startPos);
 
+	object->m_isRotated = (rotation % 180 != 0);
 	object->customSetup();
+	// 1.71 color-trigger properties, confirmed against the APK parser/vtable.
+	if (objDict->objectForKey("7"))
+		object->m_tintColor = ccc3(objDict->valueForKey("7")->intValue(),
+			objDict->valueForKey("8")->intValue(), objDict->valueForKey("9")->intValue());
+	if (objDict->objectForKey("10")) object->m_tintDuration = MAX(0.0f, objDict->valueForKey("10")->floatValue());
+	object->m_touchTriggered = objDict->valueForKey("11")->boolValue();
+	object->m_tintGround = objDict->valueForKey("14")->boolValue();
+	object->m_copyPlayerColor1 = objDict->valueForKey("15")->boolValue();
+	object->m_copyPlayerColor2 = objDict->valueForKey("16")->boolValue();
+	if (objDict->objectForKey("17")) object->m_tintObjectsUseBlend = objDict->valueForKey("17")->boolValue();
+
+	// Detail overlays use the same atlas; PlayLayer attaches them independently
+	// so their additive blend can differ from the base object's sprite batch.
+	std::string colorFrame = frame;
+	size_t suffix = colorFrame.rfind("_001.png");
+	if (suffix != std::string::npos) {
+		colorFrame.replace(suffix, 8, "_color_001.png");
+		if (CCSpriteFrameCache::sharedSpriteFrameCache()->spriteFrameByName(colorFrame.c_str())) {
+			object->m_colorSprite = CCSprite::createWithSpriteFrameName(colorFrame.c_str());
+			object->m_hasColor = true;
+		}
+	}
 	object->calculateSpawnXPos();
 
 	return object;
@@ -233,11 +259,8 @@ void GameObject::activateObject() {
         PLAY_LAYER->getBatchNodeAdd()->addChild(m_glowSprite);
     
     if (m_hasColor) {
-        if (PLAY_LAYER->getTintObjectsUseBlend()) {
-            PLAY_LAYER->getBatchNodeAdd()->addChild(m_glowSprite);
-        } else {
-            PLAY_LAYER->getBatchNode()->addChild(m_glowSprite);
-        }
+        if (!m_colorSprite->getParent()) PLAY_LAYER->getGameLayer()->addChild(m_colorSprite, 2);
+        m_colorSprite->setVisible(true);
     }
     // this = (GameManager *)(*(int (**)(void))(*(_DWORD *)v13 + 0xDC))();
     if (this->unk_0x1d0 && !this->getActionByTag(11) && m_myAction) {
@@ -363,7 +386,105 @@ void GameObject::updateState()
 
 void GameObject::customSetup()
 {
+	// Intrinsic palette/blend flags recovered from 1.71 GameObject::customSetup.
 	switch (m_objectKey) {
+	case 18: case 19: case 20: case 21: case 37: case 41: case 85: case 86: case 87: 
+	case 97: case 110: case 113: case 114: case 115: case 123: case 124: case 125: case 126: 
+	case 127: case 128: case 129: case 130: case 131: case 151: case 152: case 153: case 154: 
+	case 155: case 156: case 222: case 223: case 224: case 237: case 238: case 239: case 240: 
+	case 241: 
+		m_usePlayerColor = true; break;
+	default: break;
+	}
+	switch (m_objectKey) {
+	case 48: case 49: case 50: case 51: case 52: case 53: case 54: case 60: case 106: 
+	case 107: case 132: case 133: case 134: case 136: case 137: case 138: case 139: case 148: 
+	case 149: case 150: case 180: case 181: case 182: case 190: case 225: case 226: case 236: 
+		m_usePlayerColor2 = true; break;
+	default: break;
+	}
+	switch (m_objectKey) {
+	case 157: case 158: case 159: case 227: case 228: case 229: case 230: case 231: case 232: 
+	case 233: case 234: case 235: case 242: case 279: case 280: case 281: case 282: case 283: 
+	case 284: case 285: 
+		m_useBGColor = true; break;
+	default: break;
+	}
+	switch (m_objectKey) {
+	case 18: case 19: case 20: case 21: case 41: case 48: case 49: case 50: case 51: 
+	case 52: case 53: case 54: case 60: case 85: case 86: case 87: case 97: case 106: 
+	case 107: case 110: case 113: case 114: case 115: case 123: case 124: case 125: case 126: 
+	case 127: case 128: case 129: case 130: case 131: case 132: case 133: case 134: case 136: 
+	case 137: case 138: case 139: case 148: case 149: case 150: case 151: case 152: case 153: 
+	case 154: case 155: case 156: case 157: case 158: case 159: case 180: case 181: case 182: 
+	case 190: case 222: case 223: case 224: case 225: case 226: case 227: case 228: case 229: 
+	case 230: case 231: case 232: case 233: case 234: case 235: case 236: case 237: case 238: 
+	case 239: case 240: case 241: case 242: case 279: case 280: case 281: case 282: case 283: 
+	case 284: case 285: 
+		m_blendAdditive = true; break;
+	default: break;
+	}
+	switch (m_objectKey) {
+	case 6: case 7: case 8: case 9: case 14: case 22: case 23: case 24: case 25: 
+	case 26: case 27: case 28: case 29: case 30: case 31: case 32: case 33: case 34: 
+	case 39: case 40: case 42: case 43: case 55: case 56: case 57: case 58: case 59: 
+	case 61: case 62: case 63: case 64: case 65: case 66: case 68: case 69: case 70: 
+	case 71: case 72: case 74: case 75: case 76: case 77: case 78: case 79: case 81: 
+	case 82: case 83: case 90: case 91: case 92: case 93: case 94: case 95: case 96: 
+	case 100: case 102: case 103: case 104: case 105: case 108: case 109: case 112: case 116: 
+	case 117: case 118: case 119: case 121: case 122: case 135: case 144: case 145: case 146: 
+	case 147: case 160: case 161: case 162: case 163: case 165: case 166: case 167: case 168: 
+	case 169: case 170: case 171: case 172: case 173: case 174: case 175: case 176: case 177: 
+	case 178: case 179: case 189: case 192: case 194: case 195: case 196: case 197: case 204: 
+	case 205: case 206: case 207: case 208: case 209: case 210: case 212: case 213: case 214: 
+	case 215: case 216: case 217: case 218: case 219: case 220: case 221: case 243: case 244: 
+	case 247: case 248: case 249: case 250: case 252: case 253: case 254: case 255: case 256: 
+	case 257: case 258: case 260: case 261: case 262: case 263: case 264: case 265: case 267: 
+	case 268: case 269: case 270: case 271: case 272: case 274: case 275: case 276: case 277: 
+	case 278: 
+		m_isTintObject = true; break;
+	default: break;
+	}
+
+	switch (m_objectKey) {
+    case 10: m_type = NormalGravityPortal; break;
+    case 11: m_type = InvertGravityPortal; break;
+    case 12: m_type = CubePortal; break;
+    case 13: m_type = ShipPortal; break;
+    case 36: m_type = YellowOrb; break;
+    case 35: m_type = YellowPad; break;
+    case 67: m_type = GravityPad; break;
+    case 140: m_type = PinkPad; break;
+    case 141: m_type = PinkOrb; break;
+    case 99: m_type = SmallPortal; break;
+    case 101: m_type = BigPortal; break;
+    case 111: m_type = BirdPortal; break;
+    case 142: m_type = SecretCoin; break;
+    case 143: m_type = unk22; break;
+    case 200: case 201: case 202: case 203: m_type = unk21; break;
+    case 45: m_type = MirrorPortal; break;
+    case 46: m_type = CounterMirrorPortal; break;
+    case 47: m_type = BallPortal; break;
+    case 84: m_type = BlueOrb; break;
+    case 9: case 61: case 135: case 243: case 244:
+    case 88: case 89: case 98:
+    case 183: case 184: case 185: case 186: case 187: case 188:
+        m_type = Hazard; break;
+    case 18: case 19: case 20: case 21: case 48: case 49:
+    case 113: case 114: case 115: case 129: case 130: case 131:
+    case 225: case 226: case 237: case 238: case 239: case 240: case 241:
+    case 15: case 16: case 17: case 37: case 38: case 41: case 44:
+    case 50: case 51: case 52: case 53: case 54: case 60:
+    case 85: case 86: case 87: case 97: case 106: case 107: case 110:
+    case 123: case 124: case 125: case 126: case 127: case 128:
+    case 132: case 133: case 134: case 136: case 137: case 138: case 139:
+    case 150: case 151: case 152: case 153: case 154: case 155: case 156:
+    case 157: case 158: case 159: case 180: case 181: case 182: case 190:
+    case 211: case 222: case 223: case 224: case 227: case 228: case 229:
+    case 230: case 231: case 232: case 233: case 234: case 235: case 236:
+    case 242: case 251: case 259: case 266: case 273:
+    case 279: case 280: case 281: case 282: case 283: case 284: case 285:
+        m_type = Decoration; break;
 	case 5:
 	case 73:
 	case 80:
@@ -379,7 +500,7 @@ void GameObject::customSetup()
 		m_objectZ = -2;
 		break;
 	default:
-		if (m_frame.find("edit_e", 0)) {
+		if (m_frame.find("edit_e", 0) == std::string::npos) {
 			m_type = GameObjectType::None;
 			break;
 		}
@@ -390,12 +511,13 @@ void GameObject::customSetup()
 		unk_0x1d4 = 30.0f;
 		unk_0x1d8 = 60.0f;
 		break;
+	case 144: case 145: case 205:
 	case 8:
 	case 39:
 	case 103:
-	case 117:
-	case 118:
-	case 119:
+	case 177:
+	case 178:
+	case 179:
 	case 216:
 	case 217:
 	case 218:
@@ -427,7 +549,7 @@ CCRect GameObject::getObjectRect()
 
 CCRect GameObject::getObjectRect(float scaleModX, float scaleModY)
 {
-	CCSize objSize = CCSizeMake(unk_0x1d4, unk_0x1d8);
+	CCSize objSize = CCSizeMake(unk_0x1d4 * fabsf(getScaleX()), unk_0x1d8 * fabsf(getScaleY()));
 
 	float newSizeWidth = scaleModX * objSize.width;
 	float newSizeHeight = scaleModY * objSize.height;
@@ -463,7 +585,25 @@ void GameObject::createAndAddParticle(int objType, char const* file, int zOrder,
 
 void GameObject::triggerObject()
 {
-	// todo
+	if (m_hasBeenActivated || !PLAY_LAYER) return;
+	ccColor3B color = m_tintColor;
+	if (m_copyPlayerColor1) color = PLAY_LAYER->getPlayer()->getGlowColor1();
+	else if (m_copyPlayerColor2) color = PLAY_LAYER->getPlayer()->getGlowColor2();
+	switch (m_objectKey) {
+	case 29:
+		PLAY_LAYER->tintBackground(color, m_tintDuration);
+		if (m_tintGround) PLAY_LAYER->tintGround(color, m_tintDuration);
+		break;
+	case 30: PLAY_LAYER->tintGround(color, m_tintDuration); break;
+	case 104: PLAY_LAYER->tintLine(color, m_tintDuration); break;
+	case 105: PLAY_LAYER->tintObjects(color, m_tintDuration); break;
+	case 221:
+		PLAY_LAYER->updateTintObjectsUseBlend(m_tintObjectsUseBlend);
+		PLAY_LAYER->tintColorObjects(color, m_tintDuration);
+		break;
+	default: return;
+	}
+	triggerActivated();
 }
 
 void GameObject::deactivateObject()
